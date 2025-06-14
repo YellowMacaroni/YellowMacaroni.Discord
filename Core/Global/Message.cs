@@ -1,8 +1,10 @@
-﻿using System;
+﻿using Newtonsoft.Json;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using YellowMacaroni.Discord.API;
 using YellowMacaroni.Discord.Cache;
 using YellowMacaroni.Discord.Extentions;
 
@@ -11,24 +13,24 @@ namespace YellowMacaroni.Discord.Core
     public class Message
     {
         public string id = "";
-        public string? channel_id;
+        public string channel_id = "";
         public Channel? channel => channel_id is not null ? DiscordCache.Channels.Get(channel_id).WaitFor() : null;
-        public User? author;
-        public string? content;
-        public string? timestamp;
+        public User author = new("");
+        public string content = "";
+        public string timestamp = "";
         public string? edited_timestamp;
-        public bool? tts;
-        public bool? mention_everyone;
-        public List<User>? mentions;
-        public List<string>? mention_roles;
+        public bool tts;
+        public bool mention_everyone;
+        public List<User> mentions = [];
+        public List<string> mention_roles = [];
         public List<ChannelMention>? mention_channels;
-        public List<MessageAttachment>? attachments;
-        public List<Embed>? embeds;
+        public List<MessageAttachment> attachments = [];
+        public List<Embed> embeds = [];
         public List<Reaction>? reactions;
         public string? nonce;
-        public bool? pinned;
+        public bool pinned;
         public string? webhook_id;
-        public MessageType? type;
+        public MessageType type;
         public MessageActivity? activity;
         public Application? application;
         public string? application_id;
@@ -51,6 +53,18 @@ namespace YellowMacaroni.Discord.Core
         public MessageBuilder ToBuilder ()
         {
             return new MessageBuilder(this);
+        }
+
+        public async Task<(Message?, DiscordError?)> Edit(MessageBuilder content)
+        {
+            HttpResponseMessage result = await APIHandler.PATCH($"/channels/{channel_id}/messages/{id}", new StringContent(JsonConvert.SerializeObject(content), Encoding.UTF8, "application/json"));
+
+            return APIHandler.DeserializeResponse<Message>(result);
+        }
+
+        public async Task<(Message?, DiscordError?)> Edit(string content)
+        {
+            return await Edit(new MessageBuilder { content = content });
         }
     }
 

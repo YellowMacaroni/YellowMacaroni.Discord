@@ -208,14 +208,16 @@ namespace YellowMacaroni.Discord.Core
         /// </summary>
         public ForumLayoutType? default_forum_layout;
 
-        public async Task Send(object content)
+        public async Task<(Message?, DiscordError?)> Send(object content)
         {
             
-            await APIHandler.POST($"/channels/{id}/messages", new StringContent(JsonConvert.SerializeObject(content), Encoding.UTF8, "application/json"));
+            HttpResponseMessage result = await APIHandler.POST($"/channels/{id}/messages", new StringContent(JsonConvert.SerializeObject(content), Encoding.UTF8, "application/json"));
+
+            return APIHandler.DeserializeResponse<Message>(result);
         }
-        public async Task Send(string content)
+        public async Task<(Message?, DiscordError?)> Send(string content)
         {
-            await Send(new { content });
+            return await Send(new { content });
         }
     }
 
