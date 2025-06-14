@@ -9,7 +9,7 @@ namespace YellowMacaroni.Discord.Websocket.Events
 {
     public class GuildRole
     {
-        public string? guild_id;
-        public List<Role>? roles;
+        public string guild_id = "";
+        public Role role = new("");
     }
 }

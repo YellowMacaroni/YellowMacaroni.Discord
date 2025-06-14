@@ -1,12 +1,16 @@
 ﻿using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Expressions;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 using YellowMacaroni.Discord.API;
 using YellowMacaroni.Discord.Core;
 using YellowMacaroni.Discord.Extentions;
+using YellowMacaroni.Discord.Websocket.Events;
 
 namespace YellowMacaroni.Discord.Sharding
 {
@@ -31,7 +35,11 @@ namespace YellowMacaroni.Discord.Sharding
         
             _shardCount = shardCount ?? gateway.shards;
 
-            for (int i = 0; i < (_shardCount); i++) shards.Add(new Shard(token, intents, i, _shardCount));
+            for (int i = 0; i < (_shardCount); i++) 
+            { 
+                Shard thisShard = new(token, intents, i, _shardCount);
+                shards.Add(thisShard);
+            }
         }
 
         public void Start()

@@ -8,12 +8,13 @@ using System.Text;
 using System.Threading.Tasks;
 using YellowMacaroni.Discord.API;
 using YellowMacaroni.Discord.Core;
+using YellowMacaroni.Discord.Websocket.Events;
 
 namespace YellowMacaroni.Discord.Websocket
 {
     internal class WebsocketClient(Client client, string token, Intents intents)
     {
-        private readonly ClientWebSocket _ws = new();
+        private ClientWebSocket _ws = new();
         private readonly Client _parentClient = client;
         private readonly string _token = token;
         private readonly Intents _intents = intents;
@@ -23,7 +24,9 @@ namespace YellowMacaroni.Discord.Websocket
         private CancellationTokenSource _cts = new();
         private Task? _heartbeatTask = null;
         private Task? _receiveTask = null;
-        private string _initalGatewayUrl = String.Empty;
+        private int _connectionAttempt = 0;
+        private int _connectionAttemptDuration = 5000;
+        private string _initialGatewayUrl = String.Empty;
         private string _gatewayUrl = "wss://gateway.discord.gg/?v=10&encoding=json";
         private bool _heartbeatAcked = true;
         private double _lastPingTicks = DateTimeOffset.UtcNow.Ticks; // -1 if no ping, otherwise last ping timestamp as ticks
@@ -35,8 +38,10 @@ namespace YellowMacaroni.Discord.Websocket
         public event EventHandler<JObject>? Dispatch;
         public event EventHandler<Exception>? ErrorOccurred;
         public event EventHandler? Disconnected;
+        public event EventHandler? Connecting;
         public event EventHandler? Connected;
         public event EventHandler? Ready;
+        public event EventHandler<ClientDebug>? Debug;
 
         private readonly List<int> canReconenctCodes = [4000, 4001, 4002, 4003, 4005, 4007, 4008, 4009];
 
@@ -44,36 +49,78 @@ namespace YellowMacaroni.Discord.Websocket
         {
             try
             {
+                if (_ws.State == WebSocketState.Connecting || _ws.State == WebSocketState.Open)
+                {
+                    Debug?.Invoke(this, new ClientDebug("Refusing to connect websocket because a connection is already open", ClientDebugType.Warn));
+                    return;
+                }
+
+                if (_connectionAttempt > 3)
+                {
+                    throw new TooManyAttemptsException($"Websocket failed to connect after {_connectionAttempt} attempts over {(_connectionAttemptDuration / 2000) * ((_connectionAttempt * _connectionAttempt) + _connectionAttempt)} seconds");
+                }
+
+                Thread.Sleep(_connectionAttempt * _connectionAttemptDuration);
+
+                Connecting?.Invoke(this, EventArgs.Empty);
+
                 if (gatewayUrl is null)
                 {
+                    Debug?.Invoke(this, new ClientDebug($"Fetching gateway URI", ClientDebugType.Info));
                     HttpResponseMessage result = await APIHandler.GET("/gateway");
                     if (!result.IsSuccessStatusCode)
                     {
                         throw new Exception($"Failed to get gateway URL: {result.ReasonPhrase}");
                     }
                     JObject payload = JObject.Parse(await result.Content.ReadAsStringAsync());
-                    _gatewayUrl = payload["url"]?.ToString() ?? _initalGatewayUrl;
-                } else _gatewayUrl = gatewayUrl;
+                    _gatewayUrl = payload["url"]?.ToString() ?? _initialGatewayUrl;
+                }
+                else _gatewayUrl = gatewayUrl;
 
-                if (_initalGatewayUrl == String.Empty) _initalGatewayUrl = _gatewayUrl;
+                if (_initialGatewayUrl == String.Empty) _initialGatewayUrl = _gatewayUrl;
+
+                Debug?.Invoke(this, new ClientDebug($"Connecting to gateway using URI {_gatewayUrl}", ClientDebugType.Info));
+
+                _ws.Dispose();
+                _cts.Cancel();
+                _cts.Dispose();
+
+                _ws = new();
+                _cts = new();
+
+                if (_receiveTask is not null && _receiveTask.IsCompleted)
+                {
+                    await Task.WhenAny(_receiveTask, Task.Delay(5000));
+                    _receiveTask = null;
+                }
 
                 await _ws.ConnectAsync(
                     new Uri(_gatewayUrl),
                     _cts.Token);
 
                 Connected?.Invoke(this, EventArgs.Empty);
+                Debug?.Invoke(this, new ClientDebug($"Connected to gateway using URI {_gatewayUrl}", ClientDebugType.Info));
+
+                _connectionAttempt = 0;
 
                 _receiveTask = ReceiveMessagesAsync();
+            }
+            catch (TooManyAttemptsException ex) {
+                ErrorOccurred?.Invoke(this, ex);
             }
             catch (Exception ex)
             {
                 ErrorOccurred?.Invoke(this, ex);
-                throw;
+                _connectionAttempt++;
+                Debug?.Invoke(this, new ClientDebug($"Reconnecting to gateway after error, reconnect attempt {_connectionAttempt}", ClientDebugType.Info));
+                await ConnectAsync(gatewayUrl);
             }
         }
 
         public async Task Resume()
         {
+            Debug?.Invoke(this, new ClientDebug($"Resume command recieved", ClientDebugType.Info));
+
             await ConnectAsync(_gatewayUrl);
 
             await SendJsonAsync(new
@@ -86,16 +133,25 @@ namespace YellowMacaroni.Discord.Websocket
                     seq = _sequence
                 }
             });
+
+            Debug?.Invoke(this, new ClientDebug($"Resume payload sent using seq {_sequence} and sessionId {_sessionId}", ClientDebugType.Info));
         }
 
         public async Task DisconnectAsync(bool reconnecting = true)
         {
+            if (_ws.State != WebSocketState.Open)
+            {
+                Debug?.Invoke(this, new ClientDebug("Refusing to disconnect websocket because connection is not open", ClientDebugType.Warn));
+                return;
+            }
+
+            Debug?.Invoke(this, new ClientDebug($"Disconnecting from gateway and {(reconnecting ? "" : "not ")}reconnecting", ClientDebugType.Info));
+
             _parentClient.ready = false;
 
             _cts.Cancel();
 
-            if (_ws.State == WebSocketState.Open)
-                await _ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Disconnecting", CancellationToken.None);
+            await _ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Disconnecting", CancellationToken.None);
 
             _heartbeatTask = null;
             _receiveTask = null;
@@ -145,7 +201,7 @@ namespace YellowMacaroni.Discord.Websocket
                         if (_ws.CloseStatus.HasValue && canReconenctCodes.Contains((int)_ws.CloseStatus))
                         {
                             await Resume();
-                        } else await ConnectAsync(_initalGatewayUrl);
+                        } else await ConnectAsync(_initialGatewayUrl);
 
                         Disconnected?.Invoke(this, EventArgs.Empty);
                         break;
@@ -155,7 +211,8 @@ namespace YellowMacaroni.Discord.Websocket
             catch (Exception ex)
             {
                 ErrorOccurred?.Invoke(this, ex);
-                Disconnected?.Invoke(this, EventArgs.Empty);
+                await DisconnectAsync();
+                await ConnectAsync();
             }
         }
 
@@ -178,22 +235,26 @@ namespace YellowMacaroni.Discord.Websocket
                     break;
 
                 case 1: // Heartbeat request
+                    Debug?.Invoke(this, new ClientDebug($"Heartbeat requested", ClientDebugType.Info));
                     await SendHeartbeatAsync();
                     break;
 
                 case 10: // Hello
+                    Debug?.Invoke(this, new ClientDebug($"Hello recieved", ClientDebugType.Info));
                     _heartbeatInterval = payload["d"]?["heartbeat_interval"]?.Value<int>() ?? 41250;
                     _heartbeatTask = HeartbeatLoopAsync();
                     await SendIdentifyAsync();
                     break;
 
                 case 11: // Heartbeat ACK
+                    Debug?.Invoke(this, new ClientDebug($"Heartbeat recieved", ClientDebugType.Info));
                     ping = (float)(DateTime.UtcNow.Ticks - _lastPingTicks) / 20000f;
                     _parentClient.ping = ping;
                     _heartbeatAcked = true;
                     break;
 
                 case 7: // Reconnect
+                    Debug?.Invoke(this, new ClientDebug($"Reconnect requested", ClientDebugType.Info));
                     await DisconnectAsync();
                     await Resume();
                     break;
@@ -207,7 +268,7 @@ namespace YellowMacaroni.Discord.Websocket
                     else
                     {
                         await DisconnectAsync(true);
-                        await ConnectAsync(_initalGatewayUrl);
+                        await ConnectAsync(_initialGatewayUrl);
                     }
                     break;
             }
@@ -224,6 +285,11 @@ namespace YellowMacaroni.Discord.Websocket
                     _sessionId = payload["d"]?["session_id"]?.ToString() ?? string.Empty;
                     _gatewayUrl = payload["d"]?["resume_gateway_url"]?.ToString() ?? _gatewayUrl;
                     _parentClient.ready = true;
+                    Ready?.Invoke(this, EventArgs.Empty);
+
+                    Ready? r = payload["d"]?.ToObject<Ready>();
+                    if (r is not null) _parentClient.readyData = r;
+                    
                     break;
             }
         }
@@ -251,11 +317,15 @@ namespace YellowMacaroni.Discord.Websocket
             catch (Exception ex)
             {
                 ErrorOccurred?.Invoke(this, ex);
+                await DisconnectAsync(true);
+                await ConnectAsync();
             }
         }
 
         private async Task SendHeartbeatAsync()
         {
+            Debug?.Invoke(this, new ClientDebug($"Sending heartbeat", ClientDebugType.Info));
+
             var payload = new
             {
                 op = 1,
@@ -267,6 +337,8 @@ namespace YellowMacaroni.Discord.Websocket
 
         private async Task SendIdentifyAsync()
         {
+            Debug?.Invoke(this, new ClientDebug($"Sending identify", ClientDebugType.Info));
+
             var payload = new
             {
                 op = 2,
@@ -289,10 +361,14 @@ namespace YellowMacaroni.Discord.Websocket
 
         public async Task SendJsonAsync(object data)
         {
+            if (_ws.State != WebSocketState.Open && _ws.State != WebSocketState.CloseReceived) return;
+
             string? json = JsonConvert.SerializeObject(data);
             byte[]? bytes = Encoding.UTF8.GetBytes(json);
 
             await _ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, _cts.Token);
         }
     }
+
+    public class TooManyAttemptsException(string? message): Exception(message) { }
 }

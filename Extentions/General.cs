@@ -90,6 +90,27 @@ namespace YellowMacaroni.Discord.Extentions
             return Values;
         }
 
+        public static Dictionary<K,V> ToDictionary<K, V>(this IEnumerable<V> list, Func<V, K> keySelector) where K: notnull
+        {
+            Dictionary<K, V> dict = [];
+            foreach (V v in list)
+            {
+                K key = keySelector(v);
+                dict.TryAdd(key, v);
+            }
+            return dict;
+        }
+
+        public static Dictionary<K, V> ToDictionary<K ,V>(this IEnumerable<KeyValuePair<K, V>> list) where K: notnull
+        {
+            Dictionary<K, V> dict = [];
+            foreach (KeyValuePair<K, V> kvp in list)
+            {
+                dict.TryAdd(kvp.Key, kvp.Value);
+            }
+            return dict;
+        }
+
         public static T WaitFor<T>(this Task<T> task)
         {
             task.Wait();

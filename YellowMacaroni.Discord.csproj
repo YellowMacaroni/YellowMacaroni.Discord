@@ -5,7 +5,15 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <GenerateDocumentationFile>False</GenerateDocumentationFile>
-    <Version>1.0.0-dev$([System.DateTime]::Now.ToString('yyyyMMddHHmm'))</Version>
+    <Version>1.1.0-dev$([System.DateTime]::Now.ToString('yyyyMMddHHmm'))</Version>
+    <Title>YellowMacaroni's Discord API Wrapper</Title>
+    <Authors>YellowMacaroni</Authors>
+    <Description>A Discord API wrapper</Description>
+    <RepositoryUrl>https://github.com/YellowMacaroni/YellowMacaroni.Discord</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/YellowMacaroni/YellowMacaroni.Discord</PackageProjectUrl>
+    <RepositoryType>github</RepositoryType>
+    <PackageTags>discord</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>
 
   <ItemGroup>

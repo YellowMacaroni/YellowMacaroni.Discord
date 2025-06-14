@@ -8,7 +8,7 @@ namespace YellowMacaroni.Discord.Websocket.Events
 {
     public class GuildRoleDelete
     {
-        public string? guild_id;
-        public string? role_id;
+        public string guild_id = "";
+        public string role_id = "";
     }
 }

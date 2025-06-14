@@ -5,6 +5,7 @@ using System.Reflection;
 using YellowMacaroni.Discord.API;
 using YellowMacaroni.Discord.Cache;
 using YellowMacaroni.Discord.Core;
+using YellowMacaroni.Discord.Extentions;
 using YellowMacaroni.Discord.Sharding;
 using YellowMacaroni.Discord.Websocket;
 using YellowMacaroni.Discord.Websocket.Events;
@@ -33,10 +34,20 @@ namespace YellowMacaroni.Discord.Core
 
         public readonly Shard? shard;
 
+        public Ready? readyData = null;
+
+        public event EventHandler? ClientReady;
+        public event EventHandler? Disconnected;
+        public event EventHandler? Connecting;
+        public event EventHandler? Connected;
+        public event EventHandler<Exception>? Error;
+        public event EventHandler<ClientDebug>? Debug;
+
 
         // EVENTS
         #region ClientEvents
         public event EventHandler<JObject>? Hello;
+        public event EventHandler<Ready>? Ready;
         public event EventHandler? Resumed;
         public event EventHandler? Reconnect;
         public event EventHandler<bool>? InvalidSession;
@@ -142,6 +153,82 @@ namespace YellowMacaroni.Discord.Core
         public event EventHandler<PollVote>? MessagePollVoteRemove;
         #endregion
 
+        // EVENT FUNCTIONS
+        internal Dictionary<string, Action<Client, JObject>> eventHandlers = new() {
+            {
+                "GUILDCREATE",
+                (client, data) =>
+                {
+                    Guild? guild = data.ToObject<Guild>();
+
+                    if (guild is null) return;
+
+                    DiscordCache.Guilds.UpdateOrInsert(guild.id, guild);
+                }
+            },
+            {
+                "GUILDUPDATE",
+                (client ,data) =>
+                {
+                    Guild? guild = data.ToObject<Guild>();
+
+                    if (guild is null) return;
+
+                    DiscordCache.Guilds.UpdateOrInsert(guild.id, guild);
+                }
+            },
+            {
+                "GUILDDELETE",
+                (client, data) =>
+                {
+                    string? guildId = data["id"]?.Value<string>();
+                    if (guildId is null) return;
+                    DiscordCache.Guilds.Remove(guildId);
+                }
+            },
+            {
+                "GUILDROLECREATE",
+                (client, data) =>
+                {
+                    GuildRole? role = data.ToObject<GuildRole>();
+                    if (role is null) return;
+                    Guild? guild = DiscordCache.Guilds.Get(role.guild_id).WaitFor();
+                    if (guild is null) return;
+                    guild.roles.Insert(role.role.id, role.role);
+                }
+            },
+            {
+                "GUILDROLEUPDATE",
+                (client, data) =>
+                {
+                    GuildRole? role = data.ToObject<GuildRole>();
+                    if (role is null) return;
+                    Guild? guild = DiscordCache.Guilds.Get(role.guild_id).WaitFor();
+                    if (guild is null) return;
+                    guild.roles.UpdateOrInsert(role.role.id, role.role);
+                }
+            },
+            {
+                "GUILDROLEDELETE",
+                (client, data) =>
+                {
+                    GuildRoleDelete? roleDelete = data.ToObject<GuildRoleDelete>();
+                    if (roleDelete is null) return;
+                    Guild? guild = DiscordCache.Guilds.Get(roleDelete.guild_id).WaitFor();
+                    if (guild is null) return;
+                    guild.roles.Remove(roleDelete.role_id);
+                }
+            },
+            {
+                "TYPINGSTART",
+                (client, data) =>
+                {
+                    TypingStart? typing = data.ToObject<TypingStart>();
+                    if (typing is null) return;
+                    DiscordCache.Channels.Get(typing.channel_id).WaitFor();
+                }
+            }
+        };
 
 
         /// <summary>
@@ -157,60 +244,78 @@ namespace YellowMacaroni.Discord.Core
             _ws = new WebsocketClient(this, token, intents);
             APIHandler.AddDefaultHeader("Authorization", $"Bot {token}");
 
-            _ws.MessageRecieved += (websocket, data) =>
+            _ws.Dispatch += (websocket, data) =>
             {
-                // Extract event type from the data
                 if (data.TryGetValue("t", out var eventName) && eventName.Type != JTokenType.Null)
                 {
-                    string eventType = eventName.Value<string>() ?? "";
+                    string eventType = (eventName.Value<string>() ?? "").Replace("_", "");
 
-                    // Get all events in the current class using reflection
                     var events = this.GetType().GetEvents(BindingFlags.Public | BindingFlags.Instance);
 
-                    // Find matching event
                     foreach (var eventInfo in events)
                     {
-                        // Check if event name matches (e.g. "MESSAGE_CREATE" -> "MessageCreate")
-                        if (eventInfo.Name.Equals(eventType, StringComparison.OrdinalIgnoreCase) ||
-                            eventInfo.Name.Equals(eventType.Replace("_", ""), StringComparison.OrdinalIgnoreCase))
+                        if (eventInfo.Name.Equals(eventType, StringComparison.OrdinalIgnoreCase))
                         {
-                            // Get event handler type
                             Type? handlerType = eventInfo.EventHandlerType;
-
-                            // Extract the generic type parameter (e.g. Channel from EventHandler<Channel>)
                             Type? dataType = handlerType?.GetGenericArguments().FirstOrDefault();
 
                             if (dataType is not null && data.TryGetValue("d", out var payload))
                             {
                                 try
                                 {
-                                    // Convert payload to the expected type
                                     object convertedData = payload.ToObject(dataType) ?? new { };
 
-                                    // Get the delegate for the event
                                     var fields = this.GetType().GetFields(BindingFlags.NonPublic | BindingFlags.Instance);
                                     var eventField = fields.FirstOrDefault(f => f.FieldType == eventInfo.EventHandlerType);
                                     var eventDelegate = eventField?.GetValue(this);
 
                                     if (eventDelegate is not null)
                                     {
-                                        // Create parameters array (sender, args)
                                         object[] parameters = { this, convertedData };
 
-                                        // Invoke the event
+                                        var eventHandler = eventHandlers.GetValueOrDefault(eventType);
+                                        if (eventHandler is not null) eventHandler(this, JObject.FromObject(convertedData));
+
                                         eventDelegate?.GetType()?.GetMethod("Invoke")?.Invoke(eventDelegate, parameters);
                                     }
                                 }
-                                catch
-                                {
-                                    // Handle conversion errors
-                                }
+                                catch { }
                             }
 
-                            break; // Found and processed the event
+                            break;
                         }
                     }
                 }
+            };
+
+            _ws.Ready += (ws, _) =>
+            {
+                ClientReady?.Invoke(this, EventArgs.Empty);
+            };
+
+            _ws.Disconnected += (ws, _) =>
+            {
+                Disconnected?.Invoke(this, EventArgs.Empty);
+            };
+
+            _ws.Connecting += (ws, _) =>
+            {
+                Connecting?.Invoke(this, EventArgs.Empty);
+            };
+
+            _ws.Connected += (ws, _) =>
+            {
+                Connected?.Invoke(this, EventArgs.Empty);
+            };
+
+            _ws.Debug += (ws, debug) =>
+            {                 
+                Debug?.Invoke(this, debug);
+            };
+
+            _ws.ErrorOccurred += (ws, ex) =>
+            {
+                Error?.Invoke(this, ex);
             };
         }
 
