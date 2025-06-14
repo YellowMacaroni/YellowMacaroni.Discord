@@ -100,10 +100,23 @@ namespace YellowMacaroni.Discord.Core
         /// </summary>
         public List<Channel>? channels;
 
+        [JsonProperty(nameof(roles))]
+        private readonly List<Role>? _initialRoles;
+
+        private Collection<Role>? _roles = null;
+
         /// <summary>
         /// The roles in the guild.
         /// </summary>
-        public List<Role>? roles;
+        [JsonIgnore]
+        public Collection<Role> roles
+        {
+            get
+            {
+                _roles ??= new($"https://discord.com/api/v10/guilds/{id}/roles/{{key}}", cache: (_initialRoles ?? []).ToDictionary(r => r.id));
+                return _roles;
+            }
+        }
 
         /// <summary>
         /// The emojis in the guild.
