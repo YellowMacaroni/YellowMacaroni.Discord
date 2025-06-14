@@ -3,6 +3,7 @@ using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 using YellowMacaroni.Discord.API;
@@ -197,6 +198,33 @@ namespace YellowMacaroni.Discord.Cache
         public void Insert(string key, T value, List<string>? args = null)
         {
             _cache.Add(GenerateKey(key, args), value);
+        }
+
+        public void UpdateOrInsert(string key, T value, List<string>? args = null, bool updateWhenNull = false)
+        {
+            string cacheKey = GenerateKey(key, args);
+            
+            if (_cache.TryGetValue(cacheKey, out T? oldValue))
+            {
+                if (oldValue is null) return;
+
+                PropertyInfo[] properties = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance);
+
+                foreach (PropertyInfo property in properties)
+                {
+                    if (!property.CanWrite || !property.CanRead) continue;
+
+                    var newValue = property.GetValue(value);
+                    if (newValue is not null || updateWhenNull)
+                    {
+                        property.SetValue(oldValue, newValue);
+                    }
+                }
+            }
+            else
+            {
+                _cache.Add(cacheKey, value);
+            }
         }
 
         /// <summary>
