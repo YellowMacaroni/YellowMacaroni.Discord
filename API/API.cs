@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using YellowMacaroni.Discord.Core;
 
 namespace YellowMacaroni.Discord.API
 {
@@ -50,6 +51,18 @@ namespace YellowMacaroni.Discord.API
             if (client.DefaultRequestHeaders.Contains(name))
             {
                 client.DefaultRequestHeaders.Remove(name);
+            }
+        }
+
+        public static (T?, DiscordError?) DeserializeResponse<T>(HttpResponseMessage result) where T : class
+        {
+            if (result.IsSuccessStatusCode)
+            {
+                return (JsonConvert.DeserializeObject<T>(result.Content.ReadAsStringAsync().Result) ?? default, null);
+            }
+            else
+            {
+                return (null, new DiscordError(JsonConvert.DeserializeObject<DiscordErrorResponse>(result.Content.ReadAsStringAsync().Result) ?? new()));
             }
         }
 
