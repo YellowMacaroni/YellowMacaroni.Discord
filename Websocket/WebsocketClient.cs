@@ -25,7 +25,7 @@ namespace YellowMacaroni.Discord.Websocket
         private Task? _heartbeatTask = null;
         private Task? _receiveTask = null;
         private int _connectionAttempt = 0;
-        private int _connectionAttemptDuration = 5000;
+        private readonly int _connectionAttemptDuration = 5000;
         private string _initialGatewayUrl = String.Empty;
         private string _gatewayUrl = "wss://gateway.discord.gg/?v=10&encoding=json";
         private bool _heartbeatAcked = true;
@@ -163,7 +163,7 @@ namespace YellowMacaroni.Discord.Websocket
         private async Task ReceiveMessagesAsync()
         {
             byte[]? buffer = new byte[8192];
-            StringBuilder messageBuffer = new ();
+            StringBuilder messageBuffer = new();
 
             try
             {
@@ -184,10 +184,13 @@ namespace YellowMacaroni.Discord.Websocket
 
                     if (result.MessageType == WebSocketMessageType.Text && messageBuffer.Length > 0)
                     {
-                        string? message = messageBuffer.ToString();
-                        messageBuffer.Clear();
+                        _ = Task.Run(async () =>
+                        {
+                            string? message = messageBuffer.ToString();
+                            messageBuffer.Clear();
 
-                        await HandleMessageAsync(message);
+                            await HandleMessageAsync(message);
+                        });                        
                     }
                     else if (result.MessageType == WebSocketMessageType.Close)
                     {
@@ -289,7 +292,9 @@ namespace YellowMacaroni.Discord.Websocket
 
                     Ready? r = payload["d"]?.ToObject<Ready>();
                     if (r is not null) _parentClient.readyData = r;
-                    
+
+                    _parentClient.startupTime = DateTimeOffset.UtcNow;
+
                     break;
             }
         }

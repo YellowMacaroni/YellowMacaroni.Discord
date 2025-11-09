@@ -41,6 +41,7 @@ namespace YellowMacaroni.Discord.Core
         public MessageInteractionMetadata? interaction_metadata;
         public Interaction? interaction;
         public Channel? thread;
+        [JsonProperty(ItemConverterType = typeof(ComponentConverter))]
         public List<Component>? components;
         public List<StickerItem>? sticker_items;
         public List<Sticker>? stickers;
@@ -55,7 +56,7 @@ namespace YellowMacaroni.Discord.Core
             return new MessageBuilder(this);
         }
 
-        public async Task<(Message?, DiscordError?)> Edit(MessageBuilder content)
+        public async Task<(Message?, DiscordError?)> Edit(object content)
         {
             HttpResponseMessage result = await APIHandler.PATCH($"/channels/{channel_id}/messages/{id}", new StringContent(JsonConvert.SerializeObject(content), Encoding.UTF8, "application/json"));
 
@@ -188,7 +189,7 @@ namespace YellowMacaroni.Discord.Core
         public string? id;
         public InteractionType? type;
         public User? user;
-        public Dictionary<string, ApplicationIntegrationType>? authorizing_integration_owners;
+        public Dictionary<string, string>? authorizing_integration_owners;
         public string? original_response_message_id;
         public User? target_user;
         public string? target_message_id;

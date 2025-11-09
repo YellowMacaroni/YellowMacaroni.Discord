@@ -1,4 +1,5 @@
 ﻿using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -8,15 +9,18 @@ using YellowMacaroni.Discord.Extentions;
 
 namespace YellowMacaroni.Discord.Core
 {
+    [JsonConverter(typeof(ComponentConverter))]
     public class Component (ComponentType type)
     {
         public ComponentType type = type;
+        public ComponentType component_type = type;
         public int? id;
         public string custom_id = "";
     }
 
     public class ActionRow (): Component (ComponentType.ActionRow)
     {
+        [JsonProperty(ItemConverterType = typeof(ComponentConverter))]
         public List<Component>? components;
     }
 
@@ -61,9 +65,21 @@ namespace YellowMacaroni.Discord.Core
 
     public class ButtonBuilder: Button
     {
+        /// <summary>
+        /// Create a button with a custom ID
+        /// </summary>
+        /// <param name="customId">The custom ID for the button</param>
         public ButtonBuilder(string customId)
         {
             custom_id = customId;
+        }
+        
+        /// <summary>
+        /// Create a link button
+        /// </summary>
+        public ButtonBuilder()
+        {
+            style = ButtonStyle.Link;
         }
 
         public ButtonBuilder SetCustomId(string customId)
@@ -133,6 +149,8 @@ namespace YellowMacaroni.Discord.Core
         public int? min_values;
         public int? max_values;
         public bool? disabled;
+        public bool? required;
+        public List<string> values = [];
     }
 
     public class StringSelectBuilder: StringSelect
@@ -175,6 +193,12 @@ namespace YellowMacaroni.Discord.Core
         public StringSelectBuilder Enable()
         {
             disabled = false;
+            return this;
+        }
+
+        public StringSelectBuilder SetRequired(bool required)
+        {
+            this.required = required;
             return this;
         }
 
@@ -221,6 +245,8 @@ namespace YellowMacaroni.Discord.Core
         public int? min_values;
         public int? max_values;
         public bool? disabled;
+        public bool? required;
+        public List<string> values = [];
     }
 
     public class SelectBuilder<T>: Select where T: SelectBuilder<T>
@@ -263,6 +289,12 @@ namespace YellowMacaroni.Discord.Core
         public T Enable()
         {
             disabled = false;
+            return (T)this;
+        }
+
+        public T SetRequired(bool required)
+        {
+            this.required = required;
             return (T)this;
         }
     }
@@ -445,6 +477,7 @@ namespace YellowMacaroni.Discord.Core
     public class Section(): Component(ComponentType.Section)
     {
         public List<TextDisplay> components = [];
+        [JsonConverter(typeof(ComponentConverter))]
         public Component accessory = new(ComponentType.Button);
     }
 
@@ -620,6 +653,7 @@ namespace YellowMacaroni.Discord.Core
 
     public class Container() : Component(ComponentType.Container)
     {
+        [JsonProperty(ItemConverterType = typeof(ComponentConverter))]
         public List<Component> components = [];
         public int? accent_color;
         public Color accent
@@ -662,6 +696,69 @@ namespace YellowMacaroni.Discord.Core
         }
     }
 
+    public class Label(): Component(ComponentType.Label)
+    {
+        public string label = "";
+        public string? description;
+        [JsonConverter(typeof(ComponentConverter))]
+        public Component component = new(ComponentType.StringSelect);
+    }
+
+    public class LabelBuilder: Label
+    {
+        public LabelBuilder() { }
+        public LabelBuilder(string label, Component component)
+        {
+            this.label = label;
+            this.component = component;
+        }
+
+        public LabelBuilder SetLabel(string label)
+        {
+            this.label = label;
+            return this;
+        }
+
+        public LabelBuilder SetDescription(string description)
+        {
+            this.description = description;
+            return this;
+        }
+
+        public LabelBuilder SetComponent(Component component)
+        {
+            this.component = component;
+            return this;
+        }
+    }
+
+    public class FileUpload(): Component(ComponentType.FileUpload)
+    {
+        public int? min_values;
+        public int? max_values;
+        public bool? required;
+    }
+
+    public class FileUploadBuilder: FileUpload
+    {
+        public FileUploadBuilder() { }
+        public FileUploadBuilder SetMinValues(int minValues)
+        {
+            min_values = minValues;
+            return this;
+        }
+        public FileUploadBuilder SetMaxValues(int maxValues)
+        {
+            max_values = maxValues;
+            return this;
+        }
+        public FileUploadBuilder SetRequired(bool required)
+        {
+            this.required = required;
+            return this;
+        }
+    }
+
     public enum ComponentType
     {
         ActionRow = 1,
@@ -678,6 +775,8 @@ namespace YellowMacaroni.Discord.Core
         MediaGallery,
         File,
         Seperator,
-        Container = 17
+        Container = 17,
+        Label = 18,
+        FileUpload = 19
     }
 }

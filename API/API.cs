@@ -62,7 +62,21 @@ namespace YellowMacaroni.Discord.API
             }
             else
             {
-                return (null, new DiscordError(JsonConvert.DeserializeObject<DiscordErrorResponse>(result.Content.ReadAsStringAsync().Result) ?? new()));
+                string r = result.Content.ReadAsStringAsync().Result;
+                return (null, new DiscordError(JsonConvert.DeserializeObject<DiscordErrorResponse>(r) ?? new()));
+            }
+        }
+
+        public static DiscordError? DeserializeResponse(HttpResponseMessage result)
+        {
+            if (result.IsSuccessStatusCode)
+            {
+                return null;
+            }
+            else
+            {
+                string r = result.Content.ReadAsStringAsync().Result;
+                return new DiscordError(JsonConvert.DeserializeObject<DiscordErrorResponse>(r) ?? new());
             }
         }
 
@@ -111,6 +125,7 @@ namespace YellowMacaroni.Discord.API
                     message.Headers.Add(item.Key, item.Value);
                 }
             }
+
             if (reason is not null)
             {
                 message.Headers.Add("X-Audit-Log-Reason", reason);
@@ -139,6 +154,7 @@ namespace YellowMacaroni.Discord.API
                     message.Headers.Add(item.Key, item.Value);
                 }
             }
+
             if (reason is not null)
             {
                 message.Headers.Add("X-Audit-Log-Reason", reason);
@@ -170,6 +186,31 @@ namespace YellowMacaroni.Discord.API
                     message.Headers.Add(item.Key, item.Value);
                 }
             }
+
+            if (reason is not null)
+            {
+                message.Headers.Add("X-Audit-Log-Reason", reason);
+            }
+
+            HttpResponseMessage response = await client.SendAsync(message);
+            return response;
+        }
+
+        public static async Task<HttpResponseMessage> PUT(string endpoint, HttpContent content, Dictionary<string, string>? headers = null, string? reason = null)
+        {
+            HttpRequestMessage message = new(HttpMethod.Put, baseUrl + endpoint)
+            {
+                Content = content
+            };
+
+            if (headers is not null)
+            {
+                foreach (var item in headers)
+                {
+                    message.Headers.Add(item.Key, item.Value);
+                }
+            }
+
             if (reason is not null)
             {
                 message.Headers.Add("X-Audit-Log-Reason", reason);

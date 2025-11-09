@@ -33,6 +33,8 @@ namespace YellowMacaroni.Discord.Core
         /// </summary>
         public string? avatar;
 
+        public string? avatar_url => avatar is not null ? $"https://cdn.discordapp.com/avatars/{id}/{avatar}.png" : null;
+
         /// <summary>
         /// Whether the user belongs to an OAuth2 application.
         /// </summary>

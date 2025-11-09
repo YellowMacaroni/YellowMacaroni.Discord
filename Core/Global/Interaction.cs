@@ -1,4 +1,6 @@
-﻿using System;
+﻿using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Linq;
@@ -105,7 +107,7 @@ namespace YellowMacaroni.Discord.Core
         /// <summary>
         /// Mapping of installation contexts, that the interaction was authorized for to related user or guild IDs.
         /// </summary>
-        public Dictionary<string, Oauth2InstallParams>? authorizing_integration_owners;
+        public Dictionary<string, string>? authorizing_integration_owners;
 
         /// <summary>
         /// Context where the interaction was triggered from.
@@ -116,6 +118,154 @@ namespace YellowMacaroni.Discord.Core
         /// Attachment size limit in bytes.
         /// </summary>
         public int? attachment_size_limit;
+
+        public async Task Callback(InteractionResponseType type, object? data)
+        {
+            await API.APIHandler.POST($"/interactions/{id}/{token}/callback", new StringContent(JsonConvert.SerializeObject(new InteractionResponse { type = type, data = data }), Encoding.UTF8, "application/json"));
+        }
+
+        public async Task Pong()
+        {
+            await Callback(InteractionResponseType.Pong, null);
+        }
+        
+        public async Task Respond(MessageBuilder message)
+        {
+            await Callback(InteractionResponseType.ChannelMessageWithSource, message);
+        }
+
+        public async Task DeferResponse(bool ephemeral = false)
+        {
+            await Callback(InteractionResponseType.DeferredChannelMessageWithSource, ephemeral ? new { flags = 1 << 6 } : null);
+        }
+
+        public async Task DeferUpdate()
+        {
+            await Callback(InteractionResponseType.DeferredUpdateMessage, null);
+        }
+
+        public async Task AutocompleteResult(List<AutocompleteChoices> choices)
+        {
+            await Callback(InteractionResponseType.ApplicationCommandAutocompleteResult, new { choices });
+        }
+
+        public async Task ShowModal(ModalBuilder modal)
+        {
+            await Callback(InteractionResponseType.Modal, modal);
+        }
+
+        public async Task LaunchActivity()
+        {
+            await Callback(InteractionResponseType.LaunchActivity, null);
+        }
+
+        public async Task<(Message?, DiscordError?)> EditResponse(MessageBuilder message)
+        {
+            HttpResponseMessage result = await API.APIHandler.PATCH($"/webhooks/{application_id}/{token}/messages/@original", new StringContent(JsonConvert.SerializeObject(message), Encoding.UTF8, "application/json"));
+            return API.APIHandler.DeserializeResponse<Message>(result);
+        }
+
+        public async Task<(Message?, DiscordError?)> DeleteResponse()
+        {
+            HttpResponseMessage result = await API.APIHandler.DELETE($"/webhooks/{application_id}/{token}/messages/@original");
+            return API.APIHandler.DeserializeResponse<Message>(result);
+        }
+
+        public async Task<(Message?, DiscordError?)> SendFollowup(MessageBuilder message)
+        {
+            HttpResponseMessage result = await API.APIHandler.POST($"/webhooks/{application_id}/{token}", new StringContent(JsonConvert.SerializeObject(message), Encoding.UTF8, "application/json"));
+            return API.APIHandler.DeserializeResponse<Message>(result);
+        }
+
+        public async Task<(Message?, DiscordError?)> EditFollowup(string messageId, object message)
+        {
+            HttpResponseMessage result = await API.APIHandler.PATCH($"/webhooks/{application_id}/{token}/messages/{messageId}", new StringContent(JsonConvert.SerializeObject(message), Encoding.UTF8, "application/json"));
+            return API.APIHandler.DeserializeResponse<Message>(result);
+        }
+
+        public async Task DeleteFollowup(string messageId)
+        {
+            await API.APIHandler.DELETE($"/webhooks/{application_id}/{token}/messages/{messageId}");
+        }
+
+        private T? GetComponentById<T>(string custom_id, ComponentType? type = null) where T : Component
+        {
+            foreach (Component component in data?.components ?? [])
+            {
+                Component? thisComponent = null;
+
+                if (component.type == ComponentType.ActionRow)
+                {
+                    ActionRow? row = component as ActionRow;
+                    thisComponent = row?.components?.FirstOrDefault();
+                }
+                else if (component.type == ComponentType.Label)
+                {
+                    Label? label = component as Label;
+                    thisComponent = label?.component;
+                }
+
+                if (thisComponent?.custom_id == custom_id && (type is null || thisComponent.type == type)) return thisComponent as T;
+            }
+
+            return null;
+        }
+
+
+        public List<string>? GetStringSelectField(string custom_id)
+        {
+            StringSelect? select = GetComponentById<StringSelect>(custom_id, ComponentType.StringSelect);
+            return select?.values;
+        }
+
+        public List<string>? GetAnySelectField(string custom_id)
+        {
+            Select? select = GetComponentById<Select>(custom_id);
+            return select?.values;
+        }
+
+        public List<Role>? GetRoleField(string custom_id)
+        {
+            RoleSelect? select = GetComponentById<RoleSelect>(custom_id, ComponentType.RoleSelect);
+            if (select?.values is null) return null;
+
+            return [.. (data!.resolved?.roles?.Values.Where(r => select.values.Contains(r.id)) ?? [])];
+        }
+
+        public List<Channel>? GetChannelField(string custom_id)
+        {
+            ChannelSelect? select = GetComponentById<ChannelSelect>(custom_id, ComponentType.ChannelSelect);
+            if (select?.values is null) return null;
+
+            return [.. (data!.resolved?.channels?.Values.Where(ch => select.values.Contains(ch.id)) ?? [])];
+        }
+
+        public List<User>? GetUserField(string custom_id)
+        {
+            UserSelect? select = GetComponentById<UserSelect>(custom_id, ComponentType.UserSelect);
+            if (select?.values is null) return null;
+
+            return [.. (data!.resolved?.users?.Values.Where(u => select.values.Contains(u.id)) ?? [])];
+        }
+
+        public string? GetStringField(string custom_id)
+        {
+            TextInput? input = GetComponentById<TextInput>(custom_id, ComponentType.TextInput);
+            return input?.value;
+        }
+    }
+
+    public class InteractionResponse
+    {
+        public InteractionResponseType type;
+        public object? data;
+    }
+
+    public class AutocompleteChoices
+    {
+        public string name = "";
+        public string value = "";
+        public Dictionary<string, string>? name_localizations;
     }
 
     public enum InteractionType
@@ -136,40 +286,81 @@ namespace YellowMacaroni.Discord.Core
 
     public class InteractionData
     {
+        // APPLICATION_COMMAND
+
         /// <summary>
-        /// ID of the invoked command.
+        /// [Application Command] ID of the invoked command.
         /// </summary>
         public string? id;
 
         /// <summary>
-        /// The name of the invoked command.
+        /// [Application Command] The name of the invoked command.
         /// </summary>
         public string? name;
 
         /// <summary>
-        /// The type of command invoked.
+        /// [Application Command] The type of command invoked.
         /// </summary>
         public InteractionCommandType? type;
 
+
+        /// <summary>
+        /// [Application Command] Params and values from the user.
+        /// </summary>
+        public List<ApplicationCommandInteractionDataOption>? options;
+
+        /// <summary>
+        /// [Application Command] The ID of the guild the command is registered to.
+        /// </summary>
+        public string? guild_id;
+
+        /// <summary>
+        /// [Application Command] ID of the user or message targeted by a user or message command.
+        /// </summary>
+        public string? target_id;
+
+        // MESSAGE_COMPONENT
+        /// <summary>
+        /// [Message Component] The type of component.
+        /// </summary>
+        public ComponentType? component_type;
+
+        /// <summary>
+        /// [Message Component] The values of the component, if it is a select menu.
+        /// </summary>
+        public List<string>? values;
+
+        // MODAL_SUBMIT
+        /// <summary>
+        /// [Modal Submit] The components within the modal.
+        /// </summary>
+        [JsonProperty(ItemConverterType = typeof(ComponentConverter))]
+        public List<Component>? components;
+
+
+        // APPLICATION_COMMAND & MESSAGE_COMPONENT
         /// <summary>
         /// Converted users, roles, channels, and attachments.
         /// </summary>
         public ResolvedData? resolved;
 
+        // MESSAGE_COMPONENT & MODAL_SUBMIT
         /// <summary>
-        /// Params and values from the user.
+        /// The custom_id of the component or modal.
         /// </summary>
-        public List<ApplicationCommandInteractionDataOption>? options;
+        public string? custom_id;
+    }
 
-        /// <summary>
-        /// The ID of the guild the command is registered to.
-        /// </summary>
-        public string? guild_id;
-
-        /// <summary>
-        /// ID of the user or message targeted by a user or message command.
-        /// </summary>
-        public string? target_id;
+    public enum InteractionResponseType
+    {
+        Pong = 1,
+        ChannelMessageWithSource = 4,
+        DeferredChannelMessageWithSource = 5,
+        DeferredUpdateMessage = 6,
+        UpdateMessage = 7,
+        ApplicationCommandAutocompleteResult = 8,
+        Modal = 9,
+        LaunchActivity = 12
     }
 
     public enum InteractionCommandType

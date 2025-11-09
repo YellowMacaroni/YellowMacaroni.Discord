@@ -1,8 +1,10 @@
-﻿using System;
+﻿using Newtonsoft.Json;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using YellowMacaroni.Discord.API;
 
 namespace YellowMacaroni.Discord.Core
 {
@@ -22,6 +24,8 @@ namespace YellowMacaroni.Discord.Core
         /// The user's guild avatar hash.
         /// </summary>
         public string? avatar;
+
+        public string? avatar_url => avatar is not null ? $"https://cdn.discordapp.com/guilds/{guild_id}/users/{user?.id}/avatars/{avatar}.png" : null;
 
         /// <summary>
         /// The user's guild banner hash.
@@ -87,6 +91,18 @@ namespace YellowMacaroni.Discord.Core
         /// The guild ID this member is in, used for gateway events.
         /// </summary>
         public string? guild_id;
+
+        public async Task<DiscordError?> AddRole(string roleId, string? reason = null)
+        {
+            HttpResponseMessage result = await APIHandler.PUT($"/guilds/{guild_id}/members/{user?.id}/roles/{roleId}", new StringContent(""), null, reason);
+            return APIHandler.DeserializeResponse(result);
+        }
+
+        public async Task<DiscordError?> RemoveRole(string roleId, string? reason = null)
+        {
+            HttpResponseMessage result = await APIHandler.DELETE($"/guilds/{guild_id}/members/{user?.id}/roles/{roleId}", null, reason);
+            return APIHandler.DeserializeResponse(result);
+        }
     }
 
     public enum MemberFlags

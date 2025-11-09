@@ -14,19 +14,51 @@ namespace YellowMacaroni.Discord.Cache
 {
     public static class DiscordCache
     {
-        public static readonly Collection<Guild> Guilds = new("https://discord.com/api/v10/guilds/{key}");
-        public static readonly Collection<User> Users = new("https://discord.com/api/v10/users/{key}");
-        public static readonly Collection<Channel> Channels = new("https://discord.com/api/v10/channels/{key}");
+        public static readonly Collection<Guild> Guilds = new(Collection<Guild>.DiscordFetch("https://discord.com/api/v10/guilds/{key}"));
+        public static readonly Collection<User> Users = new(Collection<User>.DiscordFetch("https://discord.com/api/v10/users/{key}"));
+        public static readonly Collection<Channel> Channels = new(Collection<Channel>.DiscordFetch("https://discord.com/api/v10/channels/{key}"));
     }
     
     public class Collection<T> where T : class
     {
+        public static Func<string, List<string>, Task<T?>> DiscordFetch(string baseUrl, HttpMethod? method = null, Dictionary<string, string>? headers = null)
+        {
+            return async (key, args) =>
+            {
+                string url = baseUrl.Replace("{key}", key);
+
+                if (args is not null)
+                {
+                    for (int i = 0; i < args.Count; i++)
+                    {
+                        url = url.Replace($"{{i + 1}}", args[i]);
+                    }
+                }
+
+                HttpRequestMessage message = new(method ?? HttpMethod.Get, url);
+
+                foreach (KeyValuePair<string, string> header in headers ?? [])
+                {
+                    message.Headers.Add(header.Key, header.Value);
+                }
+
+                HttpResponseMessage result = await APIHandler.client.SendAsync(message);
+
+                if (result.IsSuccessStatusCode)
+                {
+                    T? value = JsonConvert.DeserializeObject<T>(await result.Content.ReadAsStringAsync());
+                    return value;
+                }
+                else
+                {
+                    return null;
+                }
+            };
+        }
+
         private readonly Dictionary<string, T> _cache = [];
-
-        private readonly string _fetchUrl = "";
-        private readonly Dictionary<string, string>? _fetchHeaders = [];
-
-        private readonly HttpMethod _method = HttpMethod.Get;
+        
+        private readonly Func<string, List<string>, Task<T?>> _fetchFunc;
 
         /// <summary>
         /// A 'collection' which stores cached items which can be searched through and added to.
@@ -36,11 +68,9 @@ namespace YellowMacaroni.Discord.Cache
         /// <param name="fetchEndpoint">The endpoint to send requests to when a fetch is initiated.</param>
         /// <param name="fetchMethod">The method to use when sending the request, null for the default (GET).</param>"
         /// <param name="fetchHeaders">Headers to send along side a fetch.</param>
-        public Collection(string fetchEndpoint, HttpMethod? fetchMethod = null, Dictionary<string, string>? fetchHeaders = null, Dictionary<string, T>? cache = null)
+        public Collection(Func<string, List<string>, Task<T?>> func, Dictionary<string, T>? cache = null)
         {
-            _fetchUrl = fetchEndpoint;
-            _fetchHeaders = fetchHeaders;
-            _method = fetchMethod ?? HttpMethod.Get;
+            _fetchFunc = func;
             if (cache is not null)
             {
                 _cache = cache;
@@ -81,39 +111,12 @@ namespace YellowMacaroni.Discord.Cache
         {
             try
             {
-                string url = _fetchUrl.Replace("{key}", key);
-
-                if (args is not null)
+                T? value = await _fetchFunc(key, args ?? []);
+                if (value is not null && cache)
                 {
-                    for (int i = 0; i < args.Count; i++)
-                    {
-                        url = url.Replace($"{{i + 1}}", args[i]);
-                    }
+                    Insert(key, value, args);
                 }
-
-                HttpRequestMessage message = new(_method, url);
-
-                foreach (KeyValuePair<string, string> header in _fetchHeaders ?? [])
-                {
-                    message.Headers.Add(header.Key, header.Value);
-                }
-
-                HttpResponseMessage result = await APIHandler.client.SendAsync(message);
-                
-                if (result.IsSuccessStatusCode)
-                {
-                    T? value = JsonConvert.DeserializeObject<T>(await result.Content.ReadAsStringAsync());
-                    if (value is not null && cache)
-                    {
-                        _cache.Add(GenerateKey(key, args), value);
-                        return value;
-                    }
-                    else return null;
-                }
-                else
-                {
-                    return null;
-                }
+                return value;
             }
             catch
             {
@@ -179,7 +182,7 @@ namespace YellowMacaroni.Discord.Cache
         /// <returns>A dictionary of key <see cref="string"/> and value <see cref="T"/>s which match the predicate.</returns>
         public Dictionary<string, T> FindManyDict(Func<T, string, bool> predicate)
         {
-            Dictionary<string, T> values = new();
+            Dictionary<string, T> values = [];
             foreach (KeyValuePair<string, T> KVP in _cache)
             {
                 if (predicate(KVP.Value, KVP.Key))
@@ -197,7 +200,7 @@ namespace YellowMacaroni.Discord.Cache
         /// <param name="value">The value to use.</param>
         public void Insert(string key, T value, List<string>? args = null)
         {
-            _cache.Add(GenerateKey(key, args), value);
+            _cache[GenerateKey(key, args)] = value;
         }
 
         public void UpdateOrInsert(string key, T value, List<string>? args = null, bool updateWhenNull = false)
@@ -223,7 +226,7 @@ namespace YellowMacaroni.Discord.Cache
             }
             else
             {
-                _cache.Add(cacheKey, value);
+                _cache.TryAdd(cacheKey, value);
             }
         }
 

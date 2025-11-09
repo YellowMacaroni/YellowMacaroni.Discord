@@ -22,6 +22,34 @@ namespace YellowMacaroni.Discord.Core
             return $"#{r:X2}{g:X2}{b:X2}";
         }
 
+        public string Hex
+        {
+            get
+            {
+                return $"{r:X2}{g:X2}{b:X2}";
+            }
+            set
+            { 
+                if (value.StartsWith('#')) value = value.Substring(1);
+                if (value.Length == 6)
+                {
+                    r = Convert.ToByte(value[..2], 16);
+                    g = Convert.ToByte(value.Substring(2, 2), 16);
+                    b = Convert.ToByte(value.Substring(4, 2), 16);
+                }
+                else if (value.Length == 3)
+                {
+                    r = Convert.ToByte(value[0].ToString() + value[0].ToString(), 16);
+                    g = Convert.ToByte(value[1].ToString() + value[1].ToString(), 16);
+                    b = Convert.ToByte(value[2].ToString() + value[2].ToString(), 16);
+                }
+                else
+                {
+                    throw new ArgumentException("Invalid hex format.");
+                }
+            }
+        }
+
         public override string ToString() => ToHex();
 
         public static explicit operator int(Color color) => color.ToInt();

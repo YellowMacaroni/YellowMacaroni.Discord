@@ -48,5 +48,10 @@ namespace YellowMacaroni.Discord.Core
         /// Whether the emoji can be used, may be false due to loss of server boosts.
         /// </summary>
         public bool? available;
+
+        public override string ToString()
+        {
+            return $"<{((animated ?? false) ? "a" : "")}:{name}:{id}>";
+        }
     }
 }

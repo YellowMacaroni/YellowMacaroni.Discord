@@ -1,10 +1,11 @@
 ﻿using Newtonsoft.Json;
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using YellowMacaroni.Discord.API;
 using YellowMacaroni.Discord.Cache;
+using YellowMacaroni.Discord.Extentions;
 
 namespace YellowMacaroni.Discord.Core
 {
@@ -98,9 +99,11 @@ namespace YellowMacaroni.Discord.Core
         /// <summary>
         /// The channels in the guild.
         /// </summary>
+        [JsonIgnore]
         public List<Channel>? channels;
 
         [JsonProperty(nameof(roles))]
+        [JsonIgnore]
         private readonly List<Role>? _initialRoles;
 
         private Collection<Role>? _roles = null;
@@ -113,7 +116,7 @@ namespace YellowMacaroni.Discord.Core
         {
             get
             {
-                _roles ??= new($"https://discord.com/api/v10/guilds/{id}/roles/{{key}}", cache: (_initialRoles ?? []).ToDictionary(r => r.id));
+                _roles ??= new(Collection<Role>.DiscordFetch($"https://discord.com/api/v10/guilds/{id}/roles/{{key}}"), Extentions.Extentions.ToDictionary((_initialRoles ?? []), r => r.id));
                 return _roles;
             }
         }
@@ -121,6 +124,7 @@ namespace YellowMacaroni.Discord.Core
         /// <summary>
         /// The emojis in the guild.
         /// </summary>
+        [JsonIgnore]
         public List<Emoji>? emojis;
 
         /// <summary>
@@ -273,28 +277,98 @@ namespace YellowMacaroni.Discord.Core
         /// </summary>
         public List<VoiceState>? voice_states;
 
+        [JsonProperty(nameof(members))]
+        [JsonIgnore]
+        private readonly List<Member>? _initialMembers = null;
+
         private Collection<Member>? _members = null;
 
         /// <summary>
         /// The members in the guild.
         /// </summary>
+        [JsonIgnore]
         public Collection<Member> members {
             get
             {
                 if (_members is not null) return _members;
-                _members = new($"https://discord.com/api/v10/guilds/{id}/members/{{key}}");
+                _members = new(async (key, args) =>
+                {
+                    Member? member = await Collection<Member>.DiscordFetch($"https://discord.com/api/v10/guilds/{id}/members/{{key}}")(key, args);
+                    if (member is not null)
+                    {
+                        member.guild_id = id;
+                        return member;
+                    }
+                    return null;
+                }, Extentions.Extentions.ToDictionary((_initialMembers ?? []), (m) => m.user?.id ?? ""));
                 return _members;
             }
+        }
+
+        public async Task<List<Member>> GetMembers(Client client, List<string> userIds, TimeSpan? maxWait = null)
+        {
+            string nonce = $"{new Random().Next(100_000_000, 999_999_999)}";
+            maxWait ??= TimeSpan.FromSeconds(2);
+            DateTimeOffset last = DateTimeOffset.Now;
+            bool finished = false;
+
+            List<Member>? members = [];
+            client.GuildMembersChunk += (client, data) =>
+            {
+                if (data.nonce != nonce) return;
+                members.AddRange(data.members);
+                last = DateTimeOffset.Now;
+
+                if (data.chunk_index + 1 >= data.chunk_count) finished = true;
+            };
+
+            await client.SendCommand(
+                new
+                {
+                    op = 8,
+                    d = new
+                    {
+                        guild_id = id,
+                        user_ids = userIds,
+                        nonce
+                    }
+                }
+            );
+
+            while (!finished && (DateTimeOffset.UtcNow - last) < maxWait) Thread.Sleep(20);
+
+            return members;
+        }
+
+        public async Task<List<Member>> SearchMembers(string query, int limit = 1)
+        {
+            HttpResponseMessage response = await APIHandler.GET($"/guilds/{id}/members/search?query={query}&limit={limit}");
+
+            List<Member>? members = APIHandler.DeserializeResponse<List<Member>>(response).Item1 ?? [];
+
+            foreach (Member member in members)
+            {
+                if (member.user?.id is not null) _members?.Insert(member.user.id, member);
+            }
+
+            return members;
+        }
+
+        public async Task<Member?> SearchMembers(string query)
+        {
+            return (await SearchMembers(query, 1)).FirstOrDefault();
         }
 
         /// <summary>
         /// All active threads in the guild that the current user has access to.
         /// </summary>
+        [JsonIgnore]
         public List<Channel>? threads;
 
         /// <summary>
         /// Presences of the members in the guild, will only include non-offline members if the size is greater than the large threshold.
         /// </summary>
+        [JsonIgnore]
         public List<PresenceUpdate>? presences;
 
         /// <summary>
@@ -310,6 +384,7 @@ namespace YellowMacaroni.Discord.Core
         /// <summary>
         /// Soundboard sounds in the guild.
         /// </summary>
+        [JsonIgnore]
         public List<SoundboardSound>? soundboard_sounds;
     }
 

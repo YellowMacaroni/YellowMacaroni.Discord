@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading.Tasks;
 using YellowMacaroni.Discord.Extentions;
@@ -11,7 +12,7 @@ namespace YellowMacaroni.Discord.Core
     {
         public int code = -1;
         public string message = "";
-        public List<DiscordErrorDetails> stack = [];
+        public string stack = "";
         public List<string> errors = [];
 
         public DiscordError(DiscordErrorResponse response)
@@ -22,37 +23,45 @@ namespace YellowMacaroni.Discord.Core
             GetStack(response.errors ?? []);
         }
 
-        private void GetStack(Dictionary<string, object> dict, List<string>? st = null)
+        private void GetStack(Dictionary<string, dynamic> dict)
         {
-            List<string> errorStack = st ?? [];
+            StringBuilder sb = new();
 
-            foreach (var error in dict)
+            
+
+            sb.AppendLine($"[{code}]: {message}");
+
+            void checkDict(Dictionary<string, dynamic> d, int depth = 1)
             {
-                if (error.Key == "_errors")
+                foreach (var kvp in d)
                 {
-                    if (error.Value is List<DiscordErrorDetails> details)
+                    if (kvp.Key == "_errors")
                     {
-                        stack.AddRange(details);
-                        foreach (DiscordErrorDetails detail in details)
+                        foreach (var err in kvp.Value.ToObject<List<DiscordErrorDetails>>())
                         {
-                            errors.Add(errorStack.Join(" > ") + $" > {detail.message}");
+                            if (err is DiscordErrorDetails errorDetails)
+                            {
+                                sb.AppendLine($"{"".PadLeft(depth, '│')}├ [{errorDetails.code}]: {errorDetails.message}");
+                                errors.Add($"[{errorDetails.code}]: {errorDetails.message}");
+                            }
                         }
                     }
-                }
-                else
-                {
-                    if (error.Value is Dictionary<string, object> nextDict)
+                    else
                     {
-                        errorStack.Add(error.Key);
-                        GetStack(nextDict, errorStack);
+                        sb.AppendLine($"{"".PadLeft(depth, '│')}├ {kvp.Key}");
+                        checkDict(kvp.Value.ToObject<Dictionary<string, dynamic>>(), depth + 1);
                     }
                 }
             }
+
+            checkDict(dict);
+
+            stack = sb.ToString();
         }
 
         public override string ToString()
         {
-            return $"[{code}] {message}\n> {errors.Join("\n> ")}";
+            return stack;
         }
     }
 
@@ -60,7 +69,11 @@ namespace YellowMacaroni.Discord.Core
     {
         public int code = -1;
         public string message = "";
-        public Dictionary<string, object>? errors = [];
+        public Dictionary<string, dynamic>? errors = [];
+    }
+    public class DiscordErrorList
+    {
+        public List<DiscordErrorDetails> _errors = [];
     }
 
     public class DiscordErrorDetails

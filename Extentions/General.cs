@@ -9,9 +9,9 @@ namespace YellowMacaroni.Discord.Extentions
 {
     public static partial class Extentions
     {
-        public static string ToJson(this object o)
+        public static string ToJson(this object o, bool indented = false)
         {
-            return JsonConvert.SerializeObject(o);
+            return JsonConvert.SerializeObject(o, indented ? Formatting.Indented : Formatting.None);
         }
 
         public static T? ToObject<T>(this string json)
@@ -85,8 +85,8 @@ namespace YellowMacaroni.Discord.Extentions
 
         public static IEnumerable<R> ForAll<T, R>(this IEnumerable<T> list, Func<T, R> method)
         {
-            IEnumerable<R> Values = [];
-            foreach (T t in list) _ = Values.Append(method(t));
+            List<R> Values = [];
+            foreach (T t in list) Values.Add(method(t));
             return Values;
         }
 

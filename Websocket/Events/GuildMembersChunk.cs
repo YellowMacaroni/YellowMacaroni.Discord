@@ -9,10 +9,10 @@ namespace YellowMacaroni.Discord.Websocket.Events
 {
     public class GuildMembersChunk
     {
-        public string? guild_id;
-        public List<Member>? members;
-        public int? chunk_index;
-        public int? chunk_count;
+        public string guild_id = "";
+        public List<Member> members = [];
+        public int chunk_index;
+        public int chunk_count;
         public List<string>? not_found;
         public List<PresenceUpdate>? presences;
         public string? nonce;

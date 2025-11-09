@@ -1,5 +1,6 @@
 ﻿using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using System.ComponentModel.DataAnnotations;
 using System.Net.WebSockets;
 using System.Reflection;
 using YellowMacaroni.Discord.API;
@@ -28,6 +29,8 @@ namespace YellowMacaroni.Discord.Core
         /// When the last ping (heartbeat) was sent out.
         /// </summary>
         public double lastPingTicks = -1d; // -1 if no ping, otherwise last ping timestamp as ticks  
+
+        public DateTimeOffset startupTime;
 
         private readonly string token;
         private readonly Intents intents;
@@ -187,6 +190,17 @@ namespace YellowMacaroni.Discord.Core
                 }
             },
             {
+                "GUILDMEMBERSCHUNK",
+                (client, data) =>
+                {
+                    GuildMembersChunk? chunk = data.ToObject<GuildMembersChunk>();
+                    if (chunk is null) return;
+                    Guild? guild = DiscordCache.Guilds.Get(chunk.guild_id).WaitFor();
+                    if (guild is null) return;
+                    foreach (var member in chunk.members) guild.members.Insert(member.user?.id ?? "", member);
+                }
+            },
+            {
                 "GUILDROLECREATE",
                 (client, data) =>
                 {
@@ -246,9 +260,12 @@ namespace YellowMacaroni.Discord.Core
 
             _ws.Dispatch += (websocket, data) =>
             {
-                if (data.TryGetValue("t", out var eventName) && eventName.Type != JTokenType.Null)
+                if (data.TryGetValue("t", out var eventName) && data.TryGetValue("d", out var payload) && eventName.Type != JTokenType.Null)
                 {
                     string eventType = (eventName.Value<string>() ?? "").Replace("_", "");
+
+                    var eventHandler = eventHandlers.GetValueOrDefault(eventType);
+                    if (eventHandler is not null) try { eventHandler(this, JObject.FromObject(payload)); } catch { }
 
                     var events = this.GetType().GetEvents(BindingFlags.Public | BindingFlags.Instance);
 
@@ -259,7 +276,7 @@ namespace YellowMacaroni.Discord.Core
                             Type? handlerType = eventInfo.EventHandlerType;
                             Type? dataType = handlerType?.GetGenericArguments().FirstOrDefault();
 
-                            if (dataType is not null && data.TryGetValue("d", out var payload))
+                            if (dataType is not null)
                             {
                                 try
                                 {
@@ -272,9 +289,6 @@ namespace YellowMacaroni.Discord.Core
                                     if (eventDelegate is not null)
                                     {
                                         object[] parameters = { this, convertedData };
-
-                                        var eventHandler = eventHandlers.GetValueOrDefault(eventType);
-                                        if (eventHandler is not null) eventHandler(this, JObject.FromObject(convertedData));
 
                                         eventDelegate?.GetType()?.GetMethod("Invoke")?.Invoke(eventDelegate, parameters);
                                     }
@@ -355,6 +369,11 @@ namespace YellowMacaroni.Discord.Core
         public void Start()
         {
             Connect();
+        }
+
+        public async Task SendCommand(object data)
+        {
+            await _ws.SendJsonAsync(data);
         }
     }
 }
