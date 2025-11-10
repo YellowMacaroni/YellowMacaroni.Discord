@@ -26,6 +26,8 @@ namespace YellowMacaroni.Discord.Core
         /// </summary>
         public string? icon;
 
+        public string? icon_url => icon is not null ? $"https://cdn.discordapp.com/icons/{id}/{icon}.png" : null;
+
         /// <summary>
         /// The icon hash of the guild (templates).
         /// </summary>
