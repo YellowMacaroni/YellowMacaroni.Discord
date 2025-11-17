@@ -15,7 +15,7 @@ namespace YellowMacaroni.Discord.Core
         public ComponentType type = type;
         public ComponentType component_type = type;
         public int? id;
-        public string custom_id = "";
+        public string? custom_id = null;
     }
 
     public class ActionRow (): Component (ComponentType.ActionRow)
