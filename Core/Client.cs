@@ -195,9 +195,51 @@ namespace YellowMacaroni.Discord.Core
                 {
                     GuildMembersChunk? chunk = data.ToObject<GuildMembersChunk>();
                     if (chunk is null) return;
-                    Guild? guild = DiscordCache.Guilds.Get(chunk.guild_id).WaitFor();
+                    Guild? guild = DiscordCache.Guilds.Get(chunk.guild_id).Result;
                     if (guild is null) return;
                     foreach (var member in chunk.members) guild.members.Insert(member.user?.id ?? "", member);
+                }
+            },
+            {
+                "GUILDMEMBERADD",
+                async (client, data) =>
+                {
+                    Member? member = data.ToObject<Member>();
+                    if (member?.guild_id is null || member.user?.id is null) return;
+                    Guild? guild = await DiscordCache.Guilds.Get(member.guild_id);
+                    if (guild is null) return;
+                    guild.members.Insert(member.user.id, member);
+                }
+            },
+            {
+                "GUILDMEMBERREMOVE",
+                async (client, data) =>
+                {
+                    Member? member = data.ToObject<Member>();
+                    if (member?.guild_id is null || member.user?.id is null) return;
+                    Guild? guild = await DiscordCache.Guilds.Get(member.guild_id);
+                    if (guild is null) return;
+                    guild.members.Remove(member.user.id);
+                }
+            },
+            {
+                "GUILDMEMBERUPDATE",
+                async (client, data) =>
+                {
+                    Member? member = data.ToObject<Member>();
+                    if (member?.guild_id is null || member.user?.id is null) return;
+                    Guild? guild = await DiscordCache.Guilds.Get(member.guild_id);
+                    if (guild is null) return;
+                    guild.members.UpdateOrInsert(member.user.id, member);
+                }
+            },
+            {
+                "USERUPDATE",
+                (client, data) =>
+                {
+                    User? user = data.ToObject<User>();
+                    if (user is null) return;
+                    DiscordCache.Users.UpdateOrInsert(user.id, user);
                 }
             },
             {
