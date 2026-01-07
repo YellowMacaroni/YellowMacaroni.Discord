@@ -197,7 +197,10 @@ namespace YellowMacaroni.Discord.Core
                     if (chunk is null) return;
                     Guild? guild = DiscordCache.Guilds.Get(chunk.guild_id).Result;
                     if (guild is null) return;
-                    foreach (var member in chunk.members) guild.members.Insert(member.user?.id ?? "", member);
+                    foreach (var member in chunk.members) {
+                        member.guild_id = chunk.guild_id;
+                        guild.members.Insert(member.user?.id ?? "", member);
+                    }
                 }
             },
             {

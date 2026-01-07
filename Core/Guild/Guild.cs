@@ -350,6 +350,7 @@ namespace YellowMacaroni.Discord.Core
 
             foreach (Member member in members)
             {
+                member.guild_id = id;
                 if (member.user?.id is not null) _members?.Insert(member.user.id, member);
             }
 

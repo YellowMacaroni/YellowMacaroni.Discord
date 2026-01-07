@@ -67,6 +67,12 @@ namespace YellowMacaroni.Discord.Core
         {
             return await Edit(new MessageBuilder { content = content });
         }
+
+        public async Task<DiscordError?> Delete(string? reason = null)
+        {
+            HttpResponseMessage result = await APIHandler.DELETE($"/channels/{channel_id}/messages/{id}", null, reason);
+            return APIHandler.DeserializeResponse(result);
+        }
     }
 
     public class MessageBuilder: Message
